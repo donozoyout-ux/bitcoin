@@ -1,4 +1,5 @@
-from flask import Flask, render_template_string
+import json
+from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
@@ -166,5 +167,10 @@ def create_app(engine):
     def home():
         status = engine.get_status()
         return render_template_string(HTML_TEMPLATE, status=status)
+
+    @app.route("/api/status")
+    def api_status():
+        status = engine.get_status()
+        return jsonify(status)
 
     return app

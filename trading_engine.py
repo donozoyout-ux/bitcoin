@@ -63,8 +63,8 @@ class TradingEngine:
         self.total_pnl = 0.0
 
         self.trade_log: list[TradeRecord] = []
-        self.last_price = 0.0
-        self.last_rsi = 0.0
+        self.last_price: Optional[float] = None
+        self.last_rsi: Optional[float] = None
         self.last_signal = "HOLD"
         self.last_error = ""
         self.current_balance = 0.0
@@ -243,7 +243,8 @@ class TradingEngine:
         last_row = df.iloc[-1]
 
         self.last_price = last_row["close"]
-        self.last_rsi = last_row.get("rsi", 0) if not pd.isna(last_row.get("rsi", 0)) else 0
+        rsi_val = last_row.get("rsi")
+        self.last_rsi = rsi_val if pd.notna(rsi_val) else None
 
         account = self.trading_client.get_account()
         self.current_balance = float(account.cash)
@@ -300,8 +301,8 @@ class TradingEngine:
             return {
                 "balance": f"${self.current_balance:,.2f}",
                 "equity": f"${self.current_balance:,.2f}",
-                "btc_price": f"${self.last_price:,.2f}" if self.last_price else "Bekleniyor...",
-                "rsi": f"{self.last_rsi:.2f}" if self.last_rsi else "Hesaplaniyor...",
+                "btc_price": f"${self.last_price:,.2f}" if self.last_price is not None else "Bekleniyor...",
+                "rsi": f"{self.last_rsi:.2f}" if self.last_rsi is not None else "Hesaplaniyor...",
                 "status": "POZISYONDA" if self.in_position else "Sinyal Bekleniyor",
                 "in_position": self.in_position,
                 "entry_price": f"${self.entry_price:,.2f}" if self.in_position else "-",

@@ -31,6 +31,10 @@ if not engine.initialize():
     logger.critical("Trading motoru baslatilamadi. Gidiyorum.")
     sys.exit(1)
 
+logger.info("Ilk piyasa verisi cekiliyor...")
+engine.run_iteration()
+logger.info("Dashboard hazir")
+
 app = create_app(engine)
 
 
