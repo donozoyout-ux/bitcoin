@@ -55,7 +55,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <nav class="bg-surface-container-low/60 backdrop-blur-xl border-r border-white/10 flex flex-col pt-20 pb-8 px-4 fixed left-0 top-0 h-full w-64 hidden md:flex z-40">
 <div class="mb-lg px-4">
 <h2 class="font-body-lg text-body-lg text-on-surface font-semibold">Control Center</h2>
-<p class="font-data-sm text-data-sm text-on-surface-variant">V3.0 - alpaca-py</p>
+<p class="font-data-sm text-data-sm text-on-surface-variant">V4.0 - CM Sling Shot + StochRSI + WaveTrend</p>
 </div>
 <ul class="flex flex-col gap-xs flex-1">
 <li><a class="bg-primary-container/20 text-primary-container border-r-2 border-primary-container flex items-center gap-md px-4 py-sm rounded-l-lg" href="#"><span class="material-symbols-outlined">dashboard</span><span class="font-body-sm text-body-sm font-medium">Dashboard</span></a></li>
@@ -101,6 +101,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 </div>
 
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter mb-margin">
+    <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
+    <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">swap_driving</span><span class="font-label-caps text-label-caps uppercase tracking-wider">CM Sling Shot</span></div>
+    <div class="font-data-lg text-headline-md font-bold z-10 {% if status.cm_trend == 'UP' %}profit-text{% elif status.cm_trend == 'DOWN' %}loss-text{% else %}text-on-surface{% endif %}">{{ status.cm_trend }}</div>
+    </div>
+    <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
+    <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">speed</span><span class="font-label-caps text-label-caps uppercase tracking-wider">StochRSI (3,3,8,10)</span></div>
+    <div class="font-data-lg text-headline-md font-bold text-cyan-400 z-10">K: {{ status.stoch_k }} <span class="font-body-sm text-on-surface-variant">D: {{ status.stoch_d }}</span></div>
+    </div>
+    <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
+    <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">show_chart</span><span class="font-label-caps text-label-caps uppercase tracking-wider">MACD</span></div>
+    <div class="font-data-lg text-headline-md font-bold text-on-surface z-10">{{ status.macd }} <span class="font-body-sm text-on-surface-variant">/ {{ status.macd_signal }}</span></div>
+    </div>
+    <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
+    <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">waves</span><span class="font-label-caps text-label-caps uppercase tracking-wider">WaveTrend</span></div>
+    <div class="font-data-lg text-headline-md font-bold z-10 {% if status.wt1 > status.wt2 %}profit-text{% else %}loss-text{% endif %}">WT1: {{ status.wt1 }} <span class="font-body-sm text-on-surface-variant">WT2: {{ status.wt2 }}</span></div>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-margin">
     <div class="glass-card rounded-xl border border-white/10 flex flex-col h-96">
     <div class="border-b border-white/10 px-md py-sm flex items-center justify-between bg-surface-container-low/50 rounded-t-xl">
@@ -123,6 +142,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="flex items-center gap-sm text-on-surface"><span class="material-symbols-outlined text-sm">info</span><span class="font-body-sm text-body-sm font-semibold">System Info &amp; Risk Status</span></div>
     </div>
     <div class="flex-1 p-md overflow-y-auto font-body-sm text-body-sm rounded-b-xl space-y-3">
+        <div class="flex justify-between items-center py-2 border-b border-white/5">
+            <span class="text-on-surface-variant">CM Sling Shot</span>
+            <span class="{% if status.cm_trend == 'UP' %}profit-text{% elif status.cm_trend == 'DOWN' %}loss-text{% else %}text-outline{% endif %} font-semibold">{{ status.cm_trend }}</span>
+        </div>
+        <div class="flex justify-between items-center py-2 border-b border-white/5">
+            <span class="text-on-surface-variant">StochRSI K/D</span>
+            <span class="text-on-surface font-semibold">{{ status.stoch_k }} / {{ status.stoch_d }}</span>
+        </div>
+        <div class="flex justify-between items-center py-2 border-b border-white/5">
+            <span class="text-on-surface-variant">MACD Hist</span>
+            <span class="{% if status.macd_hist and status.macd_hist|float > 0 %}profit-text{% else %}loss-text{% endif %} font-semibold">{{ status.macd_hist }}</span>
+        </div>
+        <div class="flex justify-between items-center py-2 border-b border-white/5">
+            <span class="text-on-surface-variant">WaveTrend</span>
+            <span class="text-on-surface font-semibold">{{ status.wt1 }} / {{ status.wt2 }}</span>
+        </div>
         <div class="flex justify-between items-center py-2 border-b border-white/5">
             <span class="text-on-surface-variant">Connection</span>
             <span class="text-primary-container font-semibold">Alpaca API ✓</span>

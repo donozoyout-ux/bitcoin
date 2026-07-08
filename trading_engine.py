@@ -1,7 +1,7 @@
 import time
 import logging
 import threading
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 
 import pandas as pd
@@ -14,7 +14,8 @@ from alpaca.data.historical.crypto import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
-from indicators import add_all_indicators, generate_signals
+from indicators import add_all_indicators
+from strategy_engine import CMSlingShotStrategy
 
 logger = logging.getLogger("TradingEngine")
 
@@ -48,13 +49,14 @@ class TradingEngine:
         self._paused = False
         self._lock = threading.Lock()
 
+        self.strategy = CMSlingShotStrategy(config)
+
         self.in_position = False
         self.entry_price = 0.0
         self.position_qty = 0.0
 
         self.daily_start_balance = 0.0
         self.daily_trades = 0
-        self.daily_losses = 0
         self.consecutive_losses = 0
         self.cooldown_until: Optional[datetime] = None
         self.total_trades = 0
@@ -68,6 +70,8 @@ class TradingEngine:
         self.last_signal = "HOLD"
         self.last_error = ""
         self.current_balance = 0.0
+        self.last_strategy_metrics = {}
+        self.df_last: Optional[pd.DataFrame] = None
 
     def initialize(self) -> bool:
         try:
@@ -86,8 +90,8 @@ class TradingEngine:
             self._running = True
 
             mode = "PAPER" if self.config.ALPACA_PAPER else "LIVE"
-            logger.info(f"Alpaca API baglantisi basarili | Mod: {mode} | Bakiye: ${self.current_balance:,.2f}")
-            self._send_telegram(f"🤖 BTC Botu baslatildi | Mod: {mode} | Bakiye: ${self.current_balance:,.2f}")
+            logger.info(f"Alpaca API baglantisi basarali | Mod: {mode} | Bakiye: ${self.current_balance:,.2f}")
+            self._send_telegram(f"Bot baslatildi | Mod: {mode} | Bakiye: ${self.current_balance:,.2f}")
             return True
         except Exception as e:
             logger.error(f"Alpaca API baglantisi BASARISIZ: {e}")
@@ -104,7 +108,7 @@ class TradingEngine:
     def _check_cooldown(self) -> bool:
         if self.cooldown_until and datetime.now() < self.cooldown_until:
             remaining = int((self.cooldown_until - datetime.now()).total_seconds() / 60)
-            logger.info(f"Soğuma modunda: {remaining} dk kaldi")
+            logger.info(f"Soguma modunda: {remaining} dk kaldi")
             return True
         return False
 
@@ -114,7 +118,7 @@ class TradingEngine:
         loss_pct = ((self.daily_start_balance - self.current_balance) / self.daily_start_balance) * 100
         if loss_pct >= self.config.MAX_DAILY_LOSS_PCT:
             logger.warning(f"Gunluk kayip limiti asildi! Kayip: %{loss_pct:.2f}")
-            self._send_telegram(f"🚨 Gunluk kayip limiti asildi (%{loss_pct:.2f}). Bot durduruldu.")
+            self._send_telegram(f"Gunluk kayip limiti asildi (%{loss_pct:.2f}). Bot durduruldu.")
             return True
         return False
 
@@ -123,7 +127,7 @@ class TradingEngine:
             request = CryptoBarsRequest(
                 symbol_or_symbols=self.config.TRADING_SYMBOL,
                 timeframe=TimeFrame(amount=15, unit=TimeFrameUnit.Minute),
-                limit=50,
+                limit=250,
             )
             bars = self.data_client.get_crypto_bars(request)
             if bars.df is None or bars.df.empty:
@@ -149,18 +153,19 @@ class TradingEngine:
             self.in_position = True
             self.entry_price = price
             self.position_qty = float(submitted.qty) if submitted.qty else self.config.TRADE_QTY
+            self.strategy.set_position_state(True, price)
 
             record = TradeRecord("BUY", price, self.position_qty, reason)
             self.trade_log.append(record)
             self.total_trades += 1
 
             msg = (
-                f"🚀 ALIM YAPILDI\n"
+                f"ALIM YAPILDI\n"
                 f"Sembol: {self.config.TRADING_SYMBOL}\n"
                 f"Fiyat: ${price:,.2f}\n"
                 f"Miktar: {self.position_qty}\n"
-                f"🛡️ Stop: ${stop_loss:,.2f}\n"
-                f"🎯 Hedef: ${take_profit:,.2f}\n"
+                f"Stop: ${stop_loss:,.2f}\n"
+                f"Hedef: ${take_profit:,.2f}\n"
                 f"Sebep: {reason}"
             )
             self._send_telegram(msg)
@@ -169,19 +174,20 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"ALIM emri basarisiz: {e}")
             self.last_error = f"Alim: {e}"
-            self._send_telegram(f"❌ ALIM EMRI BASARISIZ: {e}")
+            self._send_telegram(f"ALIM EMRI BASARISIZ: {e}")
             return False
 
     def execute_sell(self, price: float, reason: str) -> bool:
         try:
+            qty = self.position_qty if self.position_qty > 0 else self.config.TRADE_QTY
             order = MarketOrderRequest(
                 symbol=self.config.TRADING_SYMBOL,
-                qty=self.position_qty if self.position_qty > 0 else self.config.TRADE_QTY,
+                qty=qty,
                 side=OrderSide.SELL,
                 time_in_force=TimeInForce.GTC,
             )
             submitted = self.trading_client.submit_order(order)
-            pnl = (price - self.entry_price) * (self.position_qty if self.position_qty > 0 else self.config.TRADE_QTY)
+            pnl = (price - self.entry_price) * qty
             self.total_pnl += pnl
 
             if pnl > 0:
@@ -192,15 +198,16 @@ class TradingEngine:
                 self.consecutive_losses += 1
 
             self.daily_trades += 1
-            record = TradeRecord("SELL", price, self.position_qty, reason, pnl)
+            record = TradeRecord("SELL", price, qty, reason, pnl)
             self.trade_log.append(record)
             self.total_trades += 1
 
             self.in_position = False
             self.entry_price = 0.0
             self.position_qty = 0.0
+            self.strategy.reset_position_state()
 
-            emoji = "💰" if pnl > 0 else "🚨"
+            emoji = "+" if pnl > 0 else "-"
             msg = (
                 f"{emoji} SATIS YAPILDI\n"
                 f"Fiyat: ${price:,.2f}\n"
@@ -214,23 +221,20 @@ class TradingEngine:
             if self.consecutive_losses >= self.config.MAX_CONSECUTIVE_LOSSES:
                 cooldown_min = self.config.COOLDOWN_MINUTES
                 self.cooldown_until = datetime.now().replace(second=0) + pd.Timedelta(minutes=cooldown_min)
-                self._send_telegram(f"🧊 {self.consecutive_losses} ard arda zarar. {cooldown_min} dk soguma basladi.")
-                logger.warning(f"{self.consecutive_losses} ard arda zarar, {cooldown_min}dk soguma")
+                self._send_telegram(f"{self.consecutive_losses} ard arda zarar. {cooldown_min} dk soguma basladi.")
 
             return True
         except Exception as e:
             logger.error(f"SATIS emri basarisiz: {e}")
             self.last_error = f"Satis: {e}"
-            self._send_telegram(f"❌ SATIS EMRI BASARISIZ: {e}")
+            self._send_telegram(f"SATIS EMRI BASARISIZ: {e}")
             return False
 
     def run_iteration(self):
         if self._paused:
             return
-
         if self._check_cooldown():
             return
-
         if self._check_daily_loss_limit():
             self._paused = True
             return
@@ -241,6 +245,7 @@ class TradingEngine:
 
         df = add_all_indicators(df, self.config)
         last_row = df.iloc[-1]
+        self.df_last = df
 
         self.last_price = last_row["close"]
         rsi_val = last_row.get("rsi")
@@ -248,39 +253,23 @@ class TradingEngine:
 
         account = self.trading_client.get_account()
         self.current_balance = float(account.cash)
-        equity = float(account.equity)
 
-        signal = generate_signals(last_row, self.config)
+        signal = self.strategy.analyze(df, current_position=self.in_position)
         self.last_signal = signal.action
+        self.last_strategy_metrics = signal.metrics
 
         if not self.in_position:
             if signal.action == "BUY":
                 self.execute_buy(
                     price=signal.entry_price,
-                    reason=" | ".join(signal.reasons),
+                    reason=signal.reason,
                     stop_loss=signal.stop_loss,
                     take_profit=signal.take_profit,
                 )
         else:
             current_price = last_row["close"]
-            upper_band = last_row.get("bollinger_upper", float("inf"))
-            if not pd.isna(upper_band):
-                upper_band = float(upper_band)
-            else:
-                upper_band = float("inf")
-
-            if current_price >= signal.take_profit:
-                self.execute_sell(current_price, "Kar hedefine ulasildi (Take Profit)")
-            elif current_price <= signal.stop_loss:
-                self.execute_sell(current_price, "Stop-loss tetiklendi")
-            elif current_price >= upper_band and signal.action == "SELL":
-                self.execute_sell(current_price, "Ust Bollinger bandi + satis sinyali")
-            elif signal.action == "SELL":
-                self.execute_sell(current_price, "Satis sinyali alindi")
-            elif current_price >= self.entry_price * (1 + self.config.PROFIT_TARGET_PCT / 100):
-                self.execute_sell(current_price, f"Kar hedefi %{self.config.PROFIT_TARGET_PCT}")
-            elif current_price <= self.entry_price * (1 - self.config.STOP_LOSS_PCT / 100):
-                self.execute_sell(current_price, f"Stop-loss %{self.config.STOP_LOSS_PCT}")
+            if signal.exit_signal:
+                self.execute_sell(current_price, signal.exit_reason)
 
     def run(self):
         logger.info("Trading motoru 7/24 calismaya basladi (15sn aralik)")
@@ -296,11 +285,18 @@ class TradingEngine:
         logger.info("Trading motoru durduruluyor...")
         self._running = False
 
+    def _get_metric(self, key: str, fmt: str = ".2f") -> str:
+        v = self.last_strategy_metrics.get(key)
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return "-"
+        if isinstance(v, str):
+            return v
+        return f"{v:{fmt}}"
+
     def get_status(self) -> dict:
         with self._lock:
             return {
                 "balance": f"${self.current_balance:,.2f}",
-                "equity": f"${self.current_balance:,.2f}",
                 "btc_price": f"${self.last_price:,.2f}" if self.last_price is not None else "Bekleniyor...",
                 "rsi": f"{self.last_rsi:.2f}" if self.last_rsi is not None else "Hesaplaniyor...",
                 "status": "POZISYONDA" if self.in_position else "Sinyal Bekleniyor",
@@ -319,6 +315,14 @@ class TradingEngine:
                 "is_paused": self._paused,
                 "trade_log": [t.to_dict() for t in self.trade_log[-20:]],
                 "last_trade": self.trade_log[-1].to_dict() if self.trade_log else {"side": "-", "price": "-", "reason": "Islem yok"},
+                "cm_trend": self._get_metric("cm_trend", ""),
+                "stoch_k": self._get_metric("stoch_k"),
+                "stoch_d": self._get_metric("stoch_d"),
+                "macd": self._get_metric("macd"),
+                "macd_signal": self._get_metric("macd_signal"),
+                "macd_hist": self._get_metric("macd_hist"),
+                "wt1": self._get_metric("wt1"),
+                "wt2": self._get_metric("wt2"),
             }
 
     def get_last_trade_str(self) -> str:

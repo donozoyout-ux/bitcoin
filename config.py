@@ -16,10 +16,6 @@ class Config:
 
         self.TRADING_SYMBOL = os.getenv("TRADING_SYMBOL", "BTC/USD")
         self.TRADE_QTY = float(os.getenv("TRADE_QTY", "0.001"))
-        self.RSI_OVERSOLD = int(os.getenv("RSI_OVERSOLD", "35"))
-        self.RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "70"))
-        self.PROFIT_TARGET_PCT = float(os.getenv("PROFIT_TARGET_PCT", "1.5"))
-        self.STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "1.0"))
         self.MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "5.0"))
         self.MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
         self.COOLDOWN_MINUTES = int(os.getenv("COOLDOWN_MINUTES", "30"))
@@ -27,6 +23,35 @@ class Config:
         self.FLASK_PORT = int(os.getenv("FLASK_PORT", "10000"))
         self.FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
         self.FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+        # --- CM Sling Shot System ---
+        self.CM_FAST_EMA = int(os.getenv("CM_FAST_EMA", "38"))
+        self.CM_SLOW_EMA = int(os.getenv("CM_SLOW_EMA", "62"))
+
+        # --- StochRSI (3, 3, 8, 10) ---
+        self.STOCH_RSI_K = int(os.getenv("STOCH_RSI_K", "3"))
+        self.STOCH_RSI_D = int(os.getenv("STOCH_RSI_D", "3"))
+        self.STOCH_RSI_RSI_PERIOD = int(os.getenv("STOCH_RSI_RSI_PERIOD", "8"))
+        self.STOCH_RSI_STOCH_PERIOD = int(os.getenv("STOCH_RSI_STOCH_PERIOD", "10"))
+        self.STOCH_RSI_OVERSOLD = float(os.getenv("STOCH_RSI_OVERSOLD", "5"))
+        self.STOCH_RSI_OVERBOUGHT = float(os.getenv("STOCH_RSI_OVERBOUGHT", "95"))
+
+        # --- WaveTrend ---
+        self.WT_CHANNEL_LEN = int(os.getenv("WT_CHANNEL_LEN", "10"))
+        self.WT_AVG_LEN = int(os.getenv("WT_AVG_LEN", "21"))
+        self.WT_SIGNAL_LEN = int(os.getenv("WT_SIGNAL_LEN", "4"))
+        self.WT_OVERSOLD = float(os.getenv("WT_OVERSOLD", "-53"))
+        self.WT_OVERBOUGHT = float(os.getenv("WT_OVERBOUGHT", "53"))
+
+        # --- MACD ---
+        self.MACD_FAST = int(os.getenv("MACD_FAST", "12"))
+        self.MACD_SLOW = int(os.getenv("MACD_SLOW", "26"))
+        self.MACD_SIGNAL = int(os.getenv("MACD_SIGNAL", "9"))
+
+        # --- Risk Management ---
+        self.STOP_LOSS_ATR_MULT = float(os.getenv("STOP_LOSS_ATR_MULT", "1.5"))
+        self.TAKE_PROFIT_ATR_MULT = float(os.getenv("TAKE_PROFIT_ATR_MULT", "3.0"))
+        self.TRAILING_STOP_ACTIVATE = os.getenv("TRAILING_STOP_ACTIVATE", "false").lower() == "true"
 
     def _require(self, key: str) -> str:
         val = os.getenv(key)
@@ -37,10 +62,12 @@ class Config:
     def validate(self):
         if self.TRADE_QTY <= 0:
             raise ValueError("[CONFIG] TRADE_QTY sifirdan buyuk olmali")
-        if self.RSI_OVERSOLD >= self.RSI_OVERBOUGHT:
-            raise ValueError("[CONFIG] RSI_OVERSOLD, RSI_OVERBOUGHT'tan kucuk olmali")
         if not self.TRADING_SYMBOL or "/" not in self.TRADING_SYMBOL:
             raise ValueError("[CONFIG] TRADING_SYMBOL gecersiz (ornek: BTC/USD)")
+        if self.CM_FAST_EMA >= self.CM_SLOW_EMA:
+            raise ValueError("[CONFIG] CM_FAST_EMA, CM_SLOW_EMA'dan kucuk olmali")
+        if self.MACD_FAST >= self.MACD_SLOW:
+            raise ValueError("[CONFIG] MACD_FAST, MACD_SLOW'dan kucuk olmali")
         return True
 
     def is_live(self) -> bool:
