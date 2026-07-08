@@ -85,7 +85,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter mb-margin">
     <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
     <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">trending_up</span><span class="font-label-caps text-label-caps uppercase tracking-wider">Total P&amp;L</span></div>
-    <div class="font-data-lg text-headline-md font-bold z-10 {% if status.total_pnl.startswith('+') or status.total_pnl.startswith('$0') %}profit-text{% else %}loss-text{% endif %}">{{ status.total_pnl }}</div>
+    <div class="font-data-lg text-headline-md font-bold z-10 {% if status.total_pnl.startswith('$+') or status.total_pnl.startswith('$0') %}profit-text{% else %}loss-text{% endif %}">{{ status.total_pnl }}</div>
     </div>
     <div class="glass-card rounded-xl p-md flex flex-col justify-between h-24 relative overflow-hidden group">
     <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">checklist</span><span class="font-label-caps text-label-caps uppercase tracking-wider">Win Rate</span></div>
@@ -118,6 +118,109 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="flex items-center gap-sm text-on-surface-variant z-10"><span class="material-symbols-outlined text-sm">waves</span><span class="font-label-caps text-label-caps uppercase tracking-wider">WaveTrend</span></div>
     <div class="font-data-lg text-headline-md font-bold z-10 {% if status.wt1 > status.wt2 %}profit-text{% else %}loss-text{% endif %}">WT1: {{ status.wt1 }} <span class="font-body-sm text-on-surface-variant">WT2: {{ status.wt2 }}</span></div>
     </div>
+</div>
+
+<div class="glass-card rounded-xl p-md mb-margin relative overflow-hidden">
+    <div class="flex items-center gap-sm text-on-surface-variant mb-sm z-10"><span class="material-symbols-outlined text-sm">insights</span><span class="font-label-caps text-label-caps uppercase tracking-wider">Canli Analiz &amp; Sinyal Kosullari</span></div>
+    {% set analysis = status.analysis %}
+    {% if analysis %}
+    <div class="text-body-sm mb-sm p-xs rounded-lg {% if 'LONG kosullari' in analysis.summary %}bg-primary-container/10 border border-primary-container/30{% elif 'SHORT kosullari' in analysis.summary %}bg-secondary-container/10 border border-secondary-container/30{% else %}bg-surface-container-low/50 border border-white/5{% endif %}">{{ analysis.summary }}</div>
+    <div class="flex flex-wrap items-center gap-sm mb-sm text-data-sm">
+        <span class="text-on-surface-variant">Piyasa:</span>
+        <span class="font-semibold {% if 'YUKSELIS' in analysis.market_regime %}profit-text{% elif 'DUSUS' in analysis.market_regime %}loss-text{% else %}text-outline{% endif %}">{{ analysis.market_regime }}</span>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+        <div>
+            <div class="flex items-center justify-between mb-xs">
+                <span class="font-semibold text-body-sm profit-text">LONG Kosullari {% if analysis.long_readiness >= 66 %}(HAZIR){% endif %}</span>
+                <span class="text-data-sm text-on-surface-variant">%{{ analysis.long_readiness }}</span>
+            </div>
+            <div class="w-full h-1.5 bg-surface-container-high rounded-full mb-xs">
+                <div class="h-full rounded-full transition-all duration-500 {% if analysis.long_readiness >= 66 %}bg-primary-container{% elif analysis.long_readiness >= 33 %}bg-yellow-500{% else %}bg-surface-container-high opacity-30{% endif %}" style="width:{{ analysis.long_readiness }}%"></div>
+            </div>
+            {% for cond in analysis.long_conditions %}
+            <div class="flex items-start gap-xs text-data-sm py-0.5">
+                <span class="mt-0.5 {% if cond.passed %}text-primary-container{% else %}text-outline{% endif %} material-symbols-outlined text-sm">{{ 'check_circle' if cond.passed else 'radio_button_unchecked' }}</span>
+                <div>
+                    <span class="{% if cond.passed %}profit-text{% else %}text-outline{% endif %}">{{ cond.name }}</span>
+                    <span class="text-on-surface-variant block text-xs">{{ cond.current }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div>
+            <div class="flex items-center justify-between mb-xs">
+                <span class="font-semibold text-body-sm loss-text">SHORT Kosullari {% if analysis.short_readiness >= 66 %}(HAZIR){% endif %}</span>
+                <span class="text-data-sm text-on-surface-variant">%{{ analysis.short_readiness }}</span>
+            </div>
+            <div class="w-full h-1.5 bg-surface-container-high rounded-full mb-xs">
+                <div class="h-full rounded-full transition-all duration-500 {% if analysis.short_readiness >= 66 %}bg-secondary-container{% elif analysis.short_readiness >= 33 %}bg-yellow-500{% else %}bg-surface-container-high opacity-30{% endif %}" style="width:{{ analysis.short_readiness }}%"></div>
+            </div>
+            {% for cond in analysis.short_conditions %}
+            <div class="flex items-start gap-xs text-data-sm py-0.5">
+                <span class="mt-0.5 {% if cond.passed %}text-cyan-400{% else %}text-outline{% endif %} material-symbols-outlined text-sm">{{ 'check_circle' if cond.passed else 'radio_button_unchecked' }}</span>
+                <div>
+                    <span class="{% if cond.passed %}loss-text{% else %}text-outline{% endif %}">{{ cond.name }}</span>
+                    <span class="text-on-surface-variant block text-xs">{{ cond.current }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% if analysis.notes %}
+    <div class="mt-sm pt-sm border-t border-white/5">
+        <div class="text-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-xs">Notlar</div>
+        {% for note in analysis.notes %}
+        <div class="text-data-sm text-on-surface-variant flex items-center gap-xs"><span class="material-symbols-outlined text-xs">circle</span>{{ note }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-on-surface-variant text-body-sm">Analiz hesaplanmadi (ilk veri bekleniyor)</div>
+    {% endif %}
+</div>
+
+<div class="glass-card rounded-xl p-md mb-margin relative overflow-hidden">
+    <div class="flex items-center gap-sm text-on-surface-variant mb-sm z-10"><span class="material-symbols-outlined text-sm">calendar_month</span><span class="font-label-caps text-label-caps uppercase tracking-wider">Gunluk Performans</span></div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-md text-data-sm">
+        <div><span class="text-on-surface-variant block text-xs">Gunluk P&amp;L</span><span class="font-semibold text-headline-md {% if status.daily_pnl.startswith('$+') or status.daily_pnl.startswith('$0') %}profit-text{% else %}loss-text{% endif %}">{{ status.daily_pnl }}</span> <span class="text-on-surface-variant text-xs">({{ status.daily_pnl_pct }})</span></div>
+        <div><span class="text-on-surface-variant block text-xs">Islem Sayisi</span><span class="font-semibold text-headline-md text-on-surface">{{ status.daily_trades }}</span></div>
+        <div><span class="text-on-surface-variant block text-xs">Baslangic</span><span class="font-semibold text-headline-md text-on-surface">{{ status.daily_start_balance }}</span></div>
+        <div><span class="text-on-surface-variant block text-xs">Toplam P&amp;L</span><span class="font-semibold text-headline-md {% if status.total_pnl.startswith('$+') or status.total_pnl.startswith('$0') %}profit-text{% else %}loss-text{% endif %}">{{ status.total_pnl }}</span></div>
+        <div><span class="text-on-surface-variant block text-xs">Win Rate</span><span class="font-semibold text-headline-md text-primary-container">{{ status.win_rate }}</span></div>
+    </div>
+    {% set daily_report = status.daily_report %}
+    {% if daily_report and daily_report.trade_details %}
+    <div class="mt-sm pt-sm border-t border-white/5">
+        <div class="text-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-xs">Bugunun Islemleri</div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-data-sm">
+                <thead><tr class="text-on-surface-variant text-xs border-b border-white/5"><th class="text-left py-1 pr-2">Saat</th><th class="text-left py-1 pr-2">Tip</th><th class="text-right py-1 pr-2">Fiyat</th><th class="text-right py-1 pr-2">P&amp;L</th><th class="text-left py-1">Sebep</th></tr></thead>
+                <tbody>{% for t in daily_report.trade_details %}
+                <tr class="border-b border-white/5">
+                    <td class="py-1 pr-2 text-on-surface-variant">{{ t.time }}</td>
+                    <td class="py-1 pr-2 {% if t.side == 'BUY' %}profit-text{% else %}text-cyan-400{% endif %}">{{ t.side }}</td>
+                    <td class="py-1 pr-2 text-right">{{ t.price }}</td>
+                    <td class="py-1 pr-2 text-right {% if t.pnl and (t.pnl.startswith('$+') or t.pnl.startswith('$0')) %}profit-text{% else %}loss-text{% endif %}">{{ t.pnl }}</td>
+                    <td class="py-1 text-on-surface-variant text-xs">{{ t.reason }}</td>
+                </tr>{% endfor %}</tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% if status.daily_reports %}
+    <div class="mt-sm pt-sm border-t border-white/5">
+        <div class="text-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-xs">Son Gun Raporlari</div>
+        <div class="flex flex-wrap gap-sm">{% for r in status.daily_reports %}
+            <div class="bg-surface-container-low px-sm py-xs rounded-lg text-data-sm border border-white/5">
+                <span class="text-on-surface-variant text-xs block">{{ r.date }}</span>
+                <span class="{% if r.pnl.startswith('$+') or r.pnl.startswith('$0') %}profit-text{% else %}loss-text{% endif %} font-semibold">{{ r.pnl }}</span>
+                <span class="text-on-surface-variant text-xs"> ({{ r.pnl_pct }})</span>
+                <span class="text-on-surface-variant text-xs block">{{ r.trades }} islem | %{{ r.win_rate }}</span>
+            </div>{% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-margin">

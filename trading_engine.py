@@ -1,7 +1,7 @@
 import time
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 import pandas as pd
@@ -18,6 +18,62 @@ from indicators import add_all_indicators
 from strategy_engine import CMSlingShotStrategy
 
 logger = logging.getLogger("TradingEngine")
+
+
+class DailyReport:
+    def __init__(self, date_str: str, start_balance: float):
+        self.date = date_str
+        self.start_balance = start_balance
+        self.end_balance = start_balance
+        self.trades = 0
+        self.wins = 0
+        self.losses = 0
+        self.pnl = 0.0
+        self.trade_details: list[dict] = []
+
+    def close(self, end_balance: float):
+        self.end_balance = end_balance
+
+    def add_trade(self, trade: dict):
+        self.trade_details.append(trade)
+
+    @property
+    def pnl_pct(self) -> float:
+        if self.start_balance <= 0:
+            return 0.0
+        return (self.pnl / self.start_balance) * 100
+
+    @property
+    def win_rate(self) -> float:
+        total = self.wins + self.losses
+        return (self.wins / max(total, 1)) * 100
+
+    def to_dict(self) -> dict:
+        return {
+            "date": self.date,
+            "start_balance": f"${self.start_balance:,.2f}",
+            "end_balance": f"${self.end_balance:,.2f}",
+            "trades": self.trades,
+            "wins": self.wins,
+            "losses": self.losses,
+            "pnl": f"${self.pnl:+.2f}",
+            "pnl_pct": f"%{self.pnl_pct:+.2f}",
+            "win_rate": f"%{self.win_rate:.1f}",
+            "trade_details": self.trade_details[-20:],
+        }
+
+    def telegram_message(self) -> str:
+        emoji = "+" if self.pnl >= 0 else "-"
+        return (
+            f"GUN SONU RAPORU ({self.date})\n"
+            f"{'=' * 20}\n"
+            f"Baslangic: ${self.start_balance:,.2f}\n"
+            f"Bitis:     ${self.end_balance:,.2f}\n"
+            f"Kar/Zarar: {emoji} ${self.pnl:+.2f} (%{self.pnl_pct:+.2f})\n"
+            f"Islem:     {self.trades} ({self.wins}W / {self.losses}L)\n"
+            f"Win Rate:  %{self.win_rate:.1f}\n"
+            f"{'=' * 20}"
+        )
 
 
 class TradeRecord:
@@ -71,7 +127,13 @@ class TradingEngine:
         self.last_error = ""
         self.current_balance = 0.0
         self.last_strategy_metrics = {}
+        self.last_analysis = None
         self.df_last: Optional[pd.DataFrame] = None
+
+        self.daily_pnl = 0.0
+        self._current_day = ""
+        self._current_report: Optional[DailyReport] = None
+        self.daily_reports: list[DailyReport] = []
 
     def initialize(self) -> bool:
         try:
@@ -121,6 +183,21 @@ class TradingEngine:
             self._send_telegram(f"Gunluk kayip limiti asildi (%{loss_pct:.2f}). Bot durduruldu.")
             return True
         return False
+
+    def _check_day_rollover(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today != self._current_day:
+            if self._current_report:
+                self._current_report.close(self.current_balance)
+                self.daily_reports.append(self._current_report)
+                logger.info(f"Gun raporu: {self._current_report.date} | {self._current_report.pnl_pct:+.2f}%")
+                self._send_telegram(self._current_report.telegram_message())
+            self._current_day = today
+            self.daily_start_balance = self.current_balance
+            self.daily_trades = 0
+            self.daily_pnl = 0.0
+            self._current_report = DailyReport(today, self.current_balance)
+            logger.info(f"Yeni gun basladi: {today} | Bakiye: ${self.current_balance:,.2f}")
 
     def get_market_data(self) -> Optional[pd.DataFrame]:
         try:
@@ -198,9 +275,24 @@ class TradingEngine:
                 self.consecutive_losses += 1
 
             self.daily_trades += 1
+            self.daily_pnl += pnl
             record = TradeRecord("SELL", price, qty, reason, pnl)
             self.trade_log.append(record)
             self.total_trades += 1
+            if self._current_report:
+                self._current_report.trades += 1
+                self._current_report.pnl += pnl
+                if pnl > 0:
+                    self._current_report.wins += 1
+                else:
+                    self._current_report.losses += 1
+                self._current_report.add_trade({
+                    "time": record.timestamp.strftime("%H:%M:%S"),
+                    "side": "SELL",
+                    "price": f"${price:,.2f}",
+                    "reason": reason,
+                    "pnl": f"${pnl:+.2f}",
+                })
 
             self.in_position = False
             self.entry_price = 0.0
@@ -233,6 +325,7 @@ class TradingEngine:
     def run_iteration(self):
         if self._paused:
             return
+        self._check_day_rollover()
         if self._check_cooldown():
             return
         if self._check_daily_loss_limit():
@@ -257,6 +350,7 @@ class TradingEngine:
         signal = self.strategy.analyze(df, current_position=self.in_position)
         self.last_signal = signal.action
         self.last_strategy_metrics = signal.metrics
+        self.last_analysis = signal.analysis.to_dict() if signal.analysis else None
 
         if not self.in_position:
             if signal.action == "BUY":
@@ -293,6 +387,12 @@ class TradingEngine:
             return v
         return f"{v:{fmt}}"
 
+    def _daily_pnl_pct(self) -> str:
+        if self.daily_start_balance <= 0:
+            return "%0.00"
+        pct = (self.daily_pnl / self.daily_start_balance) * 100
+        return f"%{pct:+.2f}"
+
     def get_status(self) -> dict:
         with self._lock:
             return {
@@ -323,6 +423,13 @@ class TradingEngine:
                 "macd_hist": self._get_metric("macd_hist"),
                 "wt1": self._get_metric("wt1"),
                 "wt2": self._get_metric("wt2"),
+                "analysis": self.last_analysis,
+                "daily_report": self._current_report.to_dict() if self._current_report else None,
+                "daily_reports": [r.to_dict() for r in self.daily_reports[-7:]],
+                "daily_pnl": f"${self.daily_pnl:+.2f}",
+                "daily_pnl_pct": self._daily_pnl_pct(),
+                "daily_trades": self.daily_trades,
+                "daily_start_balance": f"${self.daily_start_balance:,.2f}",
             }
 
     def get_last_trade_str(self) -> str:
