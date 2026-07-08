@@ -11,7 +11,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical.crypto import CryptoHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest
+from alpaca.data.requests import CryptoBarsRequest, CryptoLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from indicators import add_all_indicators
@@ -218,6 +218,18 @@ class TradingEngine:
             self.last_error = f"Veri: {e}"
             return None
 
+    def get_live_price(self) -> Optional[float]:
+        try:
+            request = CryptoLatestTradeRequest(symbol_or_symbols=self.config.TRADING_SYMBOL)
+            result = self.data_client.get_crypto_latest_trade(request)
+            trade = result.get(self.config.TRADING_SYMBOL)
+            if trade is None:
+                return None
+            return float(trade.price)
+        except Exception as e:
+            logger.warning(f"Canli fiyat alinamadi: {e}")
+            return None
+
     def execute_buy(self, price: float, reason: str, stop_loss: float, take_profit: float) -> bool:
         try:
             order = MarketOrderRequest(
@@ -340,7 +352,8 @@ class TradingEngine:
         last_row = df.iloc[-1]
         self.df_last = df
 
-        self.last_price = last_row["close"]
+        live_price = self.get_live_price()
+        self.last_price = live_price if live_price is not None else last_row["close"]
         rsi_val = last_row.get("rsi")
         self.last_rsi = rsi_val if pd.notna(rsi_val) else None
 
@@ -355,15 +368,14 @@ class TradingEngine:
         if not self.in_position:
             if signal.action == "BUY":
                 self.execute_buy(
-                    price=signal.entry_price,
+                    price=self.last_price,
                     reason=signal.reason,
                     stop_loss=signal.stop_loss,
                     take_profit=signal.take_profit,
                 )
         else:
-            current_price = last_row["close"]
             if signal.exit_signal:
-                self.execute_sell(current_price, signal.exit_reason)
+                self.execute_sell(self.last_price, signal.exit_reason)
 
     def run(self):
         logger.info("Trading motoru 7/24 calismaya basladi (15sn aralik)")
