@@ -218,7 +218,22 @@ class TradingEngine:
             self.last_error = f"Veri: {e}"
             return None
 
+    def get_coingecko_price(self) -> Optional[float]:
+        try:
+            url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            return float(data["bitcoin"]["usd"])
+        except Exception as e:
+            logger.warning(f"CoinGecko fiyat alinamadi: {e}")
+            return None
+
     def get_live_price(self) -> Optional[float]:
+        price = self.get_coingecko_price()
+        if price is not None:
+            return price
         try:
             request = CryptoLatestTradeRequest(symbol_or_symbols=self.config.TRADING_SYMBOL)
             result = self.data_client.get_crypto_latest_trade(request)
@@ -227,7 +242,7 @@ class TradingEngine:
                 return None
             return float(trade.price)
         except Exception as e:
-            logger.warning(f"Canli fiyat alinamadi: {e}")
+            logger.warning(f"Alpaca canli fiyat alinamadi: {e}")
             return None
 
     def execute_buy(self, price: float, reason: str, stop_loss: float, take_profit: float) -> bool:
