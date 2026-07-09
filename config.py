@@ -33,8 +33,8 @@ class Config:
         self.STOCH_RSI_D = int(os.getenv("STOCH_RSI_D", "3"))
         self.STOCH_RSI_RSI_PERIOD = int(os.getenv("STOCH_RSI_RSI_PERIOD", "8"))
         self.STOCH_RSI_STOCH_PERIOD = int(os.getenv("STOCH_RSI_STOCH_PERIOD", "10"))
-        self.STOCH_RSI_OVERSOLD = float(os.getenv("STOCH_RSI_OVERSOLD", "5"))
-        self.STOCH_RSI_OVERBOUGHT = float(os.getenv("STOCH_RSI_OVERBOUGHT", "95"))
+        self.STOCH_RSI_OVERSOLD = float(os.getenv("STOCH_RSI_OVERSOLD", "15"))
+        self.STOCH_RSI_OVERBOUGHT = float(os.getenv("STOCH_RSI_OVERBOUGHT", "85"))
 
         # --- WaveTrend ---
         self.WT_CHANNEL_LEN = int(os.getenv("WT_CHANNEL_LEN", "10"))
